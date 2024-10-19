@@ -1,3 +1,6 @@
 [submodule "application"]
 	path = application
 	url = https://github.com/The18thWarrior/eth-global-24-application.git
+[submodule "lib/openzeppelin-contracts"]
+	path = lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
