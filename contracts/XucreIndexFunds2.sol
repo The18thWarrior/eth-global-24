@@ -9,7 +9,7 @@ import {PoolKey} from "../lib/v4-core/src/types/PoolKey.sol";
 import {PoolSwapTest} from "../lib/v4-core/src/test/PoolSwapTest.sol";
 import {PoolManager} from "../lib/v4-core/src/PoolManager.sol";
 import {TickMath} from "../lib/v4-core/src/libraries/TickMath.sol";
-import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
+import "../lib/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
@@ -34,6 +34,7 @@ contract Swap is Pausable, AccessControl {
         uint256[] inputAmounts;
         uint24[] poolFees;
         PoolKey[] poolKeys;
+        PoolKey feeKey;
         bool hasFees;
         uint256 amount;
         address sourceToken;
@@ -176,6 +177,12 @@ contract Swap is Pausable, AccessControl {
         );
 
         if (etfDefinition.hasFees) {
+            swap(
+                etfDefinition.feeKey,
+                int(calculateFromPercent(totalAfterFees, feeTotal)),
+                true,
+                new bytes(0)
+            );
             // ISwapRouter.ExactInputParams memory feeParams = ISwapRouter
             //     .ExactInputParams({
             //         path: abi.encodePacked(sourceToken, poolFee, feeToken),
@@ -191,9 +198,9 @@ contract Swap is Pausable, AccessControl {
         }
 
         for (uint256 i = 0; i < etfDefinition.targetTokens.length; ++i) {
-            BalanceDelta result = swap(
+            swap(
                 etfDefinition.poolKeys[i],
-                calculateFromPercent(totalAfterFees, inputAmount[i]),
+                int(calculateFromPercent(totalAfterFees, etfDefinition.inputAmounts[i])),
                 true,
                 new bytes(0)
             );
