@@ -1,0 +1,3 @@
+[submodule "application"]
+	path = application
+	url = https://github.com/The18thWarrior/eth-global-24-application.git
