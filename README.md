@@ -11,3 +11,9 @@ REPORT_GAS=true npx hardhat test
 npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
+Call to set stuff up
+source /Users/jp/.bashrc
+
+
+call to deploy 
+npx hardhat run ./deploy.ts --network baseSepolia

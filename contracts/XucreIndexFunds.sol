@@ -1,111 +1,208 @@
-pragma solidity ^0.8.27;
 
-import "@uniswap/v4-core/contracts/interfaces/IUniswapV4Pool.sol";
-import "@uniswap/v4-periphery/contracts/interfaces/ISwapRouter.sol";
-import "@aave/protocol-v2/contracts/interfaces/IFlashLoanReceiver.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+pragma abicoder v2;
 
-interface IUniswapV4Hook {
-    function beforeSwap(
-        address sender, 
-        uint256 amount0, 
-        uint256 amount1, 
-        address token0, 
-        address token1
-    ) external;
-}
+import {IPoolManager} from "../lib/v4-core/src/interfaces/IPoolManager.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "../lib/v4-core/src/types/BalanceDelta.sol";
+import {PoolKey} from "../lib/v4-core/src/types/PoolKey.sol";
+import {PoolSwapTest} from "../lib/v4-core/src/test/PoolSwapTest.sol";
+//import {PoolManager} from "../lib/v4-core/src/PoolManager.sol";
+import {TickMath} from "../lib/v4-core/src/libraries/TickMath.sol";
+import "../lib/v3-periphery/contracts/libraries/TransferHelper.sol";
+//import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import "../lib/openzeppelin-contracts/contracts/utils/Pausable.sol";
+import "../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
 
-contract FlashSwapHook is IUniswapV4Hook, IFlashLoanReceiver {
-    ISwapRouter public immutable swapRouter;
-    IUniswapV4Pool public immutable pool;
-    address public immutable flashLoanProvider;
-    address public token0;
-    address public token1;
+contract XucreIndexFunds is Pausable, AccessControl {
+
+    bytes32 public immutable PAUSER_ROLE;
+    bytes32 public immutable BATCH_CALL_ROLE;
+    // set the router address
+    PoolSwapTest swapRouter;
+    //PoolManager poolManager;
+
+    address public feeToken;
+    uint24 public poolFee;
+
+    // slippage tolerance to allow for unlimited price impact
+    uint160 public constant MIN_PRICE_LIMIT = TickMath.MIN_SQRT_PRICE + 1;
+    uint160 public constant MAX_PRICE_LIMIT = TickMath.MAX_SQRT_PRICE - 1;
+
+    struct ETFDefinition {
+        address[] targetTokens;
+        uint256[] inputAmounts;
+        uint24[] poolFees;
+        PoolKey[] poolKeys;
+        PoolKey feeKey;
+        bool hasFees;
+        uint256 amount;
+        address sourceToken;
+    }
 
     constructor(
+        address owner_xucre,
+        //address swapRouter_xucre,
+        address tokenContract_xucre,
         address _swapRouter,
-        address _pool,
-        address _flashLoanProvider,
-        address _token0,
-        address _token1
+        uint24 poolFee_xucre
     ) {
-        swapRouter = ISwapRouter(_swapRouter);
-        pool = IUniswapV4Pool(_pool);
-        flashLoanProvider = _flashLoanProvider;
-        token0 = _token0;
-        token1 = _token1;
+        PAUSER_ROLE = keccak256("PAUSER_ROLE");
+        BATCH_CALL_ROLE = keccak256("BATCH_CALL_ROLE");
+        _grantRole(DEFAULT_ADMIN_ROLE, owner_xucre);
+        _grantRole(PAUSER_ROLE, owner_xucre);
+        _grantRole(BATCH_CALL_ROLE, owner_xucre);
+        //0xc81462fec8b23319f288047f8a03a57682a35c1a
+        //poolManager = PoolManager(swapRouter_xucre);
+        feeToken = tokenContract_xucre;
+        poolFee = poolFee_xucre;
+        swapRouter = PoolSwapTest(_swapRouter);
     }
 
-    // Flash loan callback function
-    function executeOperation(
-        address[] calldata assets, 
-        uint256[] calldata amounts, 
-        uint256[] calldata premiums, 
-        address initiator, 
-        bytes calldata params
-    ) external override returns (bool) {
-        // 1. Add temporary liquidity using the flash loaned tokens
-        _addLiquidity(assets[0], assets[1], amounts[0], amounts[1]);
+    receive() external payable {
+        revert("Ether not accepted");
+    }
 
-        // 2. Execute the swap using the newly added liquidity
-        _executeSwap(params);
+    fallback() external payable {
+        revert("Function does not exist");
+    }
 
-        // 3. Remove the liquidity from the pool
-        _removeLiquidity();
+    function withdrawBalance(
+        address xucre_to
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (xucre_to != address(0)) {
+            address payable ownerPayable = payable(xucre_to);
+            ownerPayable.transfer(address(this).balance);
+        }
+    }
 
-        // 4. Repay the flash loan plus fees
-        for (uint256 i = 0; i < assets.length; i++) {
-            uint256 repaymentAmount = amounts[i] + premiums[i];
-            IERC20(assets[i]).transfer(flashLoanProvider, repaymentAmount);
+    function withdrawTokenBalance(
+        address xucre_to,
+        address xucre_tokenAddress
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (xucre_to != address(0)) {
+            uint256 balance = checkBalance(xucre_to, xucre_tokenAddress);
+            TransferHelper.safeTransfer(xucre_tokenAddress, xucre_to, balance);
+        }
+    }
+
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    /// @notice Swap tokens
+    /// @param key the pool where the swap is happening
+    /// @param amountSpecified the amount of tokens to swap. Negative is an exact-input swap
+    /// @param zeroForOne whether the swap is token0 -> token1 or token1 -> token0
+    /// @param hookData any data to be passed to the pool's hook
+    function swap(PoolKey memory key, int256 amountSpecified, bool zeroForOne, bytes memory hookData) internal returns(BalanceDelta) {
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: amountSpecified,
+            sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT // unlimited impact
+        });
+
+        // in v4, users have the option to receieve native ERC20s or wrapped ERC6909 tokens
+        // here, we'll take the ERC20s
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        
+        return swapRouter.swap(key, params, testSettings, hookData);
+        //poolManager.swap(key, params, hookData);
+    }
+
+    function checkBalance(
+        address to_xucre,
+        address tokenAddress_xucre
+    ) private view returns (uint256) {
+        // Create an instance of the token contract
+        IERC20 token = IERC20(tokenAddress_xucre);
+        // Return the balance of msg.sender
+        return token.balanceOf(to_xucre);
+    }
+
+    function calculateFromPercent(
+        uint256 amount_xucre,
+        uint256 bps_xucre
+    ) public pure returns (uint256) {
+        require((amount_xucre * bps_xucre) >= 10000, "Invalid amount entries");
+        return (amount_xucre * bps_xucre) / 10000;
+    }
+
+    function performSwapBatch(
+        address to_xucre,
+        ETFDefinition memory etfDefinition
+    ) external whenNotPaused {
+        require(
+            etfDefinition.targetTokens.length == etfDefinition.inputAmounts.length &&
+                etfDefinition.inputAmounts.length == etfDefinition.poolKeys.length,
+            "Invalid input parameters"
+        );
+
+        // Sum of input amounts
+        uint256 totalInputAmounts = 0;
+        for (uint256 i = 0; i < etfDefinition.inputAmounts.length; ++i) {
+            totalInputAmounts += etfDefinition.inputAmounts[i];
+        }
+        require(
+            totalInputAmounts == 10000,
+            "Input amounts must add up to 10000"
+        );
+
+        // Validate wallet balance for source token
+        require(checkBalance(to_xucre, etfDefinition.sourceToken) >= etfDefinition.amount, "Insufficient balance");
+
+        // Fee calculation
+        uint256 feeTotal = (etfDefinition.amount / 50);
+        uint256 totalAfterFees = etfDefinition.hasFees == false ? etfDefinition.amount : etfDefinition.amount - feeTotal;
+
+        // Transfer `totalIn` of USDT to this contract.
+
+        TransferHelper.safeTransferFrom(
+            etfDefinition.sourceToken,
+            to_xucre,
+            address(this),
+            etfDefinition.amount
+        );
+        // Approve the router to spend USDT.
+        TransferHelper.safeApprove(
+            etfDefinition.sourceToken,
+            address(swapRouter),
+            etfDefinition.amount
+        );
+
+        if (etfDefinition.hasFees) {
+            swap(
+                etfDefinition.feeKey,
+                int(calculateFromPercent(totalAfterFees, feeTotal)),
+                true,
+                new bytes(0)
+            );
         }
 
-        return true;
+        for (uint256 i = 0; i < etfDefinition.targetTokens.length; ++i) {
+            BalanceDelta balanceDelta = swap(
+                etfDefinition.poolKeys[i],
+                int(calculateFromPercent(totalAfterFees, etfDefinition.inputAmounts[i])),
+                true,
+                new bytes(0)
+            );
+            TransferHelper.safeTransferFrom(
+                etfDefinition.targetTokens[i],
+                address(this),
+                to_xucre,                
+                uint256(uint128(BalanceDeltaLibrary.amount1(balanceDelta)))
+            );
+            //require(result, 'Should return a balance');
+            
+        }
+
     }
 
-    // Hook function called before the swap
-    function beforeSwap(
-        address sender, 
-        uint256 amount0, 
-        uint256 amount1, 
-        address _token0, 
-        address _token1
-    ) external override {
-        // Logic to handle before the swap occurs
-        // E.g., checking conditions, adjusting fees, etc.
-    }
 
-    function _addLiquidity(
-        address _token0, 
-        address _token1, 
-        uint256 amount0, 
-        uint256 amount1
-    ) internal {
-        // Add liquidity to Uniswap v4 pool within a specific range
-        // Implement custom logic to provide concentrated liquidity
-    }
-
-    function _executeSwap(bytes calldata params) internal {
-        // Use Uniswap v4's swap router to perform the swap
-        // Implement logic to facilitate the swap
-    }
-
-    function _removeLiquidity() internal {
-        // Implement logic to remove the liquidity after the swap
-        // Call Uniswap v4 functions to withdraw the liquidity
-    }
-
-    // Function to initiate the flash loan and swap
-    function initiateFlashSwap(
-        address[] calldata assets, 
-        uint256[] calldata amounts
-    ) external {
-        bytes memory params = ""; // Parameters for the swap
-        // Request a flash loan from the provider
-        flashLoanProvider.flashLoan(
-            address(this),
-            assets,
-            amounts,
-            params
-        );
-    }
 }
