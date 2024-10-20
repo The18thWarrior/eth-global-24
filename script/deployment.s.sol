@@ -22,7 +22,7 @@ import {TickMath} from "../lib/v4-periphery/lib/v4-core/src/libraries/TickMath.s
 import {Constants22} from './base/Constants.sol';
 import {Config} from './base/Config.sol';
 
-//forge script script/deployment.s.sol:DeployXucre --fork-url http://localhost:8545 --broadcast --via-ir --optimize --optimizer-runs 200 --private-key 
+//forge script script/deployment.s.sol:DeployXucre --fork-url http://localhost:8545 --broadcast --via-ir --optimize --optimizer-runs 200 -i 1
 contract DeployXucre is Script, Constants22, Config {
     using CurrencyLibrary for Currency;
     // Constants from the original script
@@ -78,7 +78,7 @@ contract DeployXucre is Script, Constants22, Config {
     
 }
 
-//forge script script/deployment.s.sol:DeployTokens --fork-url http://localhost:8545 --broadcast --via-ir --optimize --optimizer-runs 200 --private-key 
+//forge script script/deployment.s.sol:DeployTokens --fork-url http://localhost:8545 --broadcast --via-ir --optimize --optimizer-runs 200 -i 1
 contract DeployTokens is Script, Constants22, Config {
     using CurrencyLibrary for Currency;
     // Constants from the original script
@@ -147,7 +147,7 @@ contract DeployTokens is Script, Constants22, Config {
     }    
 }
 
-//forge script script/deployment.s.sol:DeployLps --fork-url http://localhost:8545 --broadcast --via-ir --optimize --optimizer-runs 200 --private-key 
+//forge script script/deployment.s.sol:DeployLps --fork-url http://localhost:8545 --broadcast --via-ir --optimize --optimizer-runs 200 -i 1
 contract DeployLps is Script, Constants22, Config {
     using CurrencyLibrary for Currency;
     // Constants from the original script
@@ -177,6 +177,8 @@ contract DeployLps is Script, Constants22, Config {
     /////////////////////////////////////
 
     function createPair(Currency currency0, Currency currency1, IERC20 token1) internal {
+
+        console.log("Testing logging in create pair ");
         PoolKey memory pool = PoolKey({
             currency0: currency0,
             currency1: currency1,
@@ -221,10 +223,10 @@ contract DeployLps is Script, Constants22, Config {
         vm.startBroadcast();
         tokenApprovals(currency0, currency1, token1);
         
-        // multicall to atomically create pool & add liquidity
-        //vm.broadcast();
-        posm.multicall{value: valueToPass}(params);
         vm.stopBroadcast();
+        // multicall to atomically create pool & add liquidity
+        vm.broadcast();
+        posm.multicall{value: valueToPass}(params);
     }
 
     function _mintLiquidityParams(
@@ -247,13 +249,13 @@ contract DeployLps is Script, Constants22, Config {
 
     function tokenApprovals(Currency currency0, Currency currency1, IERC20 token1) public {
         if (!currency0.isAddressZero()) {
-            IERC20(address(0x0)).approve(address(posm), type(uint256).max);
+            IERC20(Currency.unwrap(currency0)).approve(address(posm), type(uint256).max);
             //token0.approve(address(PERMIT2), type(uint256).max);
-            //PERMIT2.approve(address(0x0), address(posm), type(uint160).max, type(uint48).max);
+            PERMIT2.approve(Currency.unwrap(currency0), address(posm), type(uint160).max, type(uint48).max);
         }
         if (!currency1.isAddressZero()) {
-            token1.approve(address(PERMIT2), token0Amount);
-            //PERMIT2.approve(address(token1), address(posm), type(uint160).max, type(uint48).max);
+            IERC20(Currency.unwrap(currency1)).approve(address(PERMIT2), type(uint256).max);
+            PERMIT2.approve(Currency.unwrap(currency1), address(posm), type(uint160).max, type(uint48).max);
         }
         return;
     }
@@ -262,12 +264,13 @@ contract DeployLps is Script, Constants22, Config {
 
           //vm.prank(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266);
           //IERC20 token_source = IERC20(address(0x0));
-          IERC20 token_WBTC = IERC20(address(0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512));
-          IERC20 token_WETH = IERC20(address(0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0));
-          IERC20 token_AERO = IERC20(address(0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9));
-          IERC20 token_MANTRA = IERC20(address(0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9));
-          IERC20 token_SOL = IERC20(address(0x5FC8d32690cc91D4c39d9d3abcBD16989F875707));
-          IERC20 token_POL = IERC20(address(0x0165878A594ca255338adfa4d48449f69242Eb8F));
+
+          IERC20 token_WBTC = IERC20(address(0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e));
+          IERC20 token_WETH = IERC20(address(0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0));
+          IERC20 token_AERO = IERC20(address(0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82));
+          IERC20 token_MANTRA = IERC20(address(0x9A676e781A523b5d0C0e43731313A708CB607508));
+          IERC20 token_SOL = IERC20(address(0x0B306BF915C4d645ff596e518fAf3F9669b97016));
+          IERC20 token_POL = IERC20(address(0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1));
           Currency currency_source = Currency.wrap(address(0x0));
           Currency currency_WBTC = Currency.wrap(address(token_WBTC));
           Currency currency_WETH = Currency.wrap(address(token_WETH));
@@ -277,11 +280,11 @@ contract DeployLps is Script, Constants22, Config {
           Currency currency_POL = Currency.wrap(address(token_POL));
         
           createPair(currency_source, currency_WBTC, token_WBTC);
-          //createPair(currency_source, currency_WETH, token_WETH);
-          //createPair(currency_source, currency_AERO, token_AERO);
-          //createPair(currency_source, currency_MANTRA, token_MANTRA);
-          //createPair(currency_source, currency_SOL, token_SOL);
-          //createPair(currency_source, currency_POL, token_POL);
+          // createPair(currency_source, currency_WETH, token_WETH);
+          // createPair(currency_source, currency_AERO, token_AERO);
+          // createPair(currency_source, currency_MANTRA, token_MANTRA);
+          // createPair(currency_source, currency_SOL, token_SOL);
+          // createPair(currency_source, currency_POL, token_POL);
           
     }    
 }

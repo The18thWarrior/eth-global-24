@@ -14,19 +14,20 @@ import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {Constants} from "v4-core/src/../test/utils/Constants.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {CurrencyLibrary, Currency} from "v4-core/src/types/Currency.sol";
-import {Counter} from "../src/Counter.sol";
-import {HookMiner} from "../test/utils/HookMiner.sol";
 import {IPositionManager} from "v4-periphery/src/interfaces/IPositionManager.sol";
 import {PositionManager} from "v4-periphery/src/PositionManager.sol";
-import {EasyPosm} from "../test/utils/EasyPosm.sol";
+import {EasyPosm} from "./utils/EasyPosm.sol";
 import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol";
-import {DeployPermit2} from "../test/utils/forks/DeployPermit2.sol";
+import {DeployPermit2} from "./utils/DeployPermit2.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {IPositionDescriptor} from "v4-periphery/src/interfaces/IPositionDescriptor.sol";
+import {Config} from './base/Config.sol';
 
 /// @notice Forge script for deploying v4 & hooks to **anvil**
 /// @dev This script only works on an anvil RPC because v4 exceeds bytecode limits
-contract CounterScript is Script, DeployPermit2 {
+//forge script script/Anvil.s.sol:CounterScript --fork-url http://localhost:8545 --broadcast --via-ir --optimize --optimizer-runs 200 -i 1
+
+contract CounterScript is Script, DeployPermit2, Config {
     using EasyPosm for IPositionManager;
 
     address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
@@ -48,10 +49,21 @@ contract CounterScript is Script, DeployPermit2 {
         IPositionManager posm = deployPosm(manager);
         (PoolModifyLiquidityTest lpRouter, PoolSwapTest swapRouter,) = deployRouters(manager);
         vm.stopBroadcast();
-
+        console.log(
+            string.concat(
+                "PositionManager deployed at ",
+                vm.toString(address(posm)), " ",
+                "PoolModifyLiquidityTest deployed at ",
+                vm.toString(address(lpRouter)), " ",
+                "PoolSwapTest deployed at ",
+                vm.toString(address(swapRouter)), " ",
+                "IPoolManager deployed at ",
+                vm.toString(address(manager)), " "
+            )
+        );
         // test the lifecycle (create pool, add liquidity, swap)
         vm.startBroadcast();
-        testLifecycle(manager, address(counter), posm, lpRouter, swapRouter);
+        testLifecycle(manager, address(hookContract), posm, lpRouter, swapRouter);
         vm.stopBroadcast();
     }
 
@@ -115,15 +127,18 @@ contract CounterScript is Script, DeployPermit2 {
             PoolKey(Currency.wrap(address(token0)), Currency.wrap(address(token1)), 3000, tickSpacing, IHooks(hook));
         manager.initialize(poolKey, Constants.SQRT_PRICE_1_1);
 
+        console.log('manager.initialize');
         // approve the tokens to the routers
         token0.approve(address(lpRouter), type(uint256).max);
         token1.approve(address(lpRouter), type(uint256).max);
         token0.approve(address(swapRouter), type(uint256).max);
         token1.approve(address(swapRouter), type(uint256).max);
 
+        console.log('tokens approved');
         approvePosmCurrency(posm, Currency.wrap(address(token0)));
         approvePosmCurrency(posm, Currency.wrap(address(token1)));
 
+        console.log('posm currency approved');
         // add full range liquidity to the pool
         lpRouter.modifyLiquidity(
             poolKey,
@@ -133,18 +148,19 @@ contract CounterScript is Script, DeployPermit2 {
             ZERO_BYTES
         );
 
+        console.log('position modified');
         posm.mint(
             poolKey,
             TickMath.minUsableTick(tickSpacing),
             TickMath.maxUsableTick(tickSpacing),
-            100e18,
-            10_000e18,
-            10_000e18,
+            100e15,
+            1000e15,
+            1000e15,
             msg.sender,
             block.timestamp + 300,
             ZERO_BYTES
         );
-
+        console.log('minted position');
         // swap some tokens
         bool zeroForOne = true;
         int256 amountSpecified = 1 ether;
@@ -155,6 +171,6 @@ contract CounterScript is Script, DeployPermit2 {
         });
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        swapRouter.swap(poolKey, params, testSettings, ZERO_BYTES);
+        //swapRouter.swap(poolKey, params, testSettings, ZERO_BYTES);
     }
 }
