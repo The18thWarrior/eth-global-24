@@ -3,15 +3,15 @@
 pragma solidity ^0.8.26;
 pragma abicoder v2;
 
-import {IPoolManager} from "../lib/v4-core/src/interfaces/IPoolManager.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "../lib/v4-core/src/types/BalanceDelta.sol";
-import {PoolKey} from "../lib/v4-core/src/types/PoolKey.sol";
-import {PoolSwapTest} from "../lib/v4-core/src/test/PoolSwapTest.sol";
-import {IHooks} from "../lib/v4-core/src/interfaces/IHooks.sol";
-import {Constants} from "../lib/v4-core/test/utils/Constants.sol";
-import {Currency, CurrencyLibrary} from "../lib/v4-core/src/types/Currency.sol";
+import {IPoolManager} from "../lib/v4-periphery/lib/v4-core/src/interfaces/IPoolManager.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "../lib/v4-periphery/lib/v4-core/src/types/BalanceDelta.sol";
+import {PoolKey} from "../lib/v4-periphery/lib/v4-core/src/types/PoolKey.sol";
+import {PoolSwapTest} from "../lib/v4-periphery/lib/v4-core/src/test/PoolSwapTest.sol";
+import {IHooks} from "../lib/v4-periphery/lib/v4-core/src/interfaces/IHooks.sol";
+import {Constants} from "../lib/v4-periphery/lib/v4-core/test/utils/Constants.sol";
+import {Currency, CurrencyLibrary} from "../lib/v4-periphery/lib/v4-core/src/types/Currency.sol";
 //import {PoolManager} from "../lib/v4-core/src/PoolManager.sol";
-import {TickMath} from "../lib/v4-core/src/libraries/TickMath.sol";
+import {TickMath} from "../lib/v4-periphery/lib/v4-core/src/libraries/TickMath.sol";
 import "../lib/v3-periphery/contracts/libraries/TransferHelper.sol";
 //import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import "../lib/openzeppelin-contracts/contracts/utils/Pausable.sol";
