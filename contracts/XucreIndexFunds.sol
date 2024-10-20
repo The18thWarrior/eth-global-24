@@ -7,6 +7,9 @@ import {IPoolManager} from "../lib/v4-core/src/interfaces/IPoolManager.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "../lib/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "../lib/v4-core/src/types/PoolKey.sol";
 import {PoolSwapTest} from "../lib/v4-core/src/test/PoolSwapTest.sol";
+import {IHooks} from "../lib/v4-core/src/interfaces/IHooks.sol";
+import {Constants} from "../lib/v4-core/test/utils/Constants.sol";
+import {Currency, CurrencyLibrary} from "../lib/v4-core/src/types/Currency.sol";
 //import {PoolManager} from "../lib/v4-core/src/PoolManager.sol";
 import {TickMath} from "../lib/v4-core/src/libraries/TickMath.sol";
 import "../lib/v3-periphery/contracts/libraries/TransferHelper.sol";
@@ -33,8 +36,9 @@ contract XucreIndexFunds is Pausable, AccessControl {
         address[] targetTokens;
         uint256[] inputAmounts;
         uint24[] poolFees;
-        PoolKey[] poolKeys;
-        PoolKey feeKey;
+        int24[] tickSpacings;
+        uint24 sourceFee;
+        int24 sourceTickSpacing;
         bool hasFees;
         uint256 amount;
         address sourceToken;
@@ -52,7 +56,6 @@ contract XucreIndexFunds is Pausable, AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, owner_xucre);
         _grantRole(PAUSER_ROLE, owner_xucre);
         _grantRole(BATCH_CALL_ROLE, owner_xucre);
-        //0xc81462fec8b23319f288047f8a03a57682a35c1a
         //poolManager = PoolManager(swapRouter_xucre);
         feeToken = tokenContract_xucre;
         poolFee = poolFee_xucre;
@@ -138,9 +141,13 @@ contract XucreIndexFunds is Pausable, AccessControl {
         address to_xucre,
         ETFDefinition memory etfDefinition
     ) external whenNotPaused {
+        
+        // int24[] tickSpacings;
+        // uint24 sourceFee;
+        // int24 sourceTickSpacing;
         require(
             etfDefinition.targetTokens.length == etfDefinition.inputAmounts.length &&
-                etfDefinition.inputAmounts.length == etfDefinition.poolKeys.length,
+                etfDefinition.inputAmounts.length == etfDefinition.tickSpacings.length,
             "Invalid input parameters"
         );
 
@@ -176,9 +183,15 @@ contract XucreIndexFunds is Pausable, AccessControl {
             etfDefinition.amount
         );
 
+        PoolKey memory feePoolKey = getPoolKey(
+            etfDefinition.sourceToken,
+            feeToken,
+            poolFee,
+            etfDefinition.sourceTickSpacing
+        );
         if (etfDefinition.hasFees) {
             swap(
-                etfDefinition.feeKey,
+                feePoolKey,
                 int(calculateFromPercent(totalAfterFees, feeTotal)),
                 true,
                 new bytes(0)
@@ -186,8 +199,14 @@ contract XucreIndexFunds is Pausable, AccessControl {
         }
 
         for (uint256 i = 0; i < etfDefinition.targetTokens.length; ++i) {
+            PoolKey memory poolKey = getPoolKey(
+                etfDefinition.sourceToken,
+                etfDefinition.targetTokens[i],
+                etfDefinition.poolFees[i],
+                etfDefinition.tickSpacings[i]
+            );
             BalanceDelta balanceDelta = swap(
-                etfDefinition.poolKeys[i],
+                poolKey,
                 int(calculateFromPercent(totalAfterFees, etfDefinition.inputAmounts[i])),
                 true,
                 new bytes(0)
@@ -204,5 +223,18 @@ contract XucreIndexFunds is Pausable, AccessControl {
 
     }
 
-
+    function getPoolKey(
+        address token0,
+        address token1,
+        uint24 fee,
+        int24 tickSpacing
+    ) public pure returns (PoolKey memory) {
+        return PoolKey({
+            currency0: Currency.wrap(token0),
+            currency1: Currency.wrap(token1),
+            fee: fee,
+            hooks: IHooks(Constants.ADDRESS_ZERO),
+            tickSpacing: tickSpacing
+        });
+    }
 }

@@ -1,7 +1,7 @@
 require('@openzeppelin/hardhat-upgrades');
 import type { HardhatUserConfig } from "hardhat/types";
 import "@nomicfoundation/hardhat-toolbox";
-//import "@nomicfoundation/hardhat-verify";
+import "@nomicfoundation/hardhat-verify";
 require("dotenv").config();
 
 const networks = {
@@ -32,7 +32,7 @@ const networks = {
   }
 }
 
-const config: HardhatUserConfig = {
+const config : HardhatUserConfig = {
   solidity: {
     compilers: [
       {
@@ -54,23 +54,14 @@ const config: HardhatUserConfig = {
     }
   },
   networks: networks,
-  /*etherscan: {
+  etherscan: {
     apiKey: {
       polygon: process.env.ETHERSCAN_POLYGON_API_KEY as string,
       mainnet: process.env.ETHERSCAN_API_KEY as string,
-      base: process.env.ETHERSCAN_BASE_API_KEY as string
+      base: process.env.ETHERSCAN_BASE_API_KEY as string,
+      baseSepolia: process.env.ETHERSCAN_BASE_API_KEY as string
     },
-    customChains: [
-      {
-        network: "base",
-        chainId: 8453,
-        urls: {
-          apiURL: "https://api.basescan.org/api",
-          browserURL: "https://basescan.org"
-        }
-      }
-    ]
-  }*/
+  }
 };
 
 
